@@ -15,7 +15,7 @@
     "@types/node": "^20.10.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "18.x"
   },
   "keywords": [
     "archive",
@@ -23,6 +23,6 @@
     "vercel",
     "github"
   ],
-  "author": "Your Name",
+  "author": "cultsoda",
   "license": "MIT"
 }
