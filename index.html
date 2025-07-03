@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>자동화된 개인 문서 아카이브</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Pretendard', sans-serif; }
+        #sidebar a:hover, #sidebar a.active { background-color: #374151; }
+        .submenu { display: none; }
+        .submenu.open { display: block; }
+        .caret.open { transform: rotate(90deg); }
+        #addPageModal, #loadingIndicator { display: none; }
+        #addPageModal.open, #loadingIndicator.open { display: flex; }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex">
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="bg-gray-800 text-white w-80 flex-shrink-0 flex flex-col">
+        <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
+            <div>
+                <h1 class="text-xl font-bold">문서 아카이브</h1>
+                <p class="text-sm text-gray-400">나의 디지털 서재 (Auto-Commit)</p>
+            </div>
+        </div>
+        <div class="px-6 py-4">
+            <button id="addPageBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition-colors">
+                <i class="fas fa-plus mr-2"></i>새 페이지 추가
+            </button>
+        </div>
+        <div class="px-6 pb-4">
+            <input type="text" id="searchInput" placeholder="문서 검색..." class="w-full bg-gray-700 text-white rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+        <nav id="document-list-container" class="flex-1 overflow-y-auto px-4"></nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col">
+         <div class="p-4 bg-white border-b border-gray-200 flex items-center">
+             <i class="fas fa-file-alt mr-2 text-gray-500"></i>
+            <span id="page-title" class="text-sm text-gray-800 font-semibold">아카이브에 오신 것을 환영합니다!</span>
+        </div>
+        <div class="flex-1 relative">
+            <iframe id="content-iframe" srcdoc="<h1 style='text-align:center; margin-top: 50px;'>왼쪽 메뉴에서 문서를 선택하거나 새 페이지를 추가하세요.</h1>" class="w-full h-full border-0"></iframe>
+            <div id="loadingIndicator" class="absolute inset-0 bg-white bg-opacity-75 justify-center items-center">
+                <div class="text-center">
+                    <i class="fas fa-spinner fa-spin text-4xl text-indigo-600"></i>
+                    <p class="mt-4 text-lg font-semibold">자동으로 저장하고 배포하는 중...</p>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Add Page Modal -->
+    <div id="addPageModal" class="fixed inset-0 bg-black bg-opacity-50 justify-center items-center z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6">
+            <h2 class="text-2xl font-bold mb-4">새 페이지 추가</h2>
+            <form id="addPageForm">
+                <div class="mb-4">
+                    <label for="pageTitle" class="block text-gray-700 text-sm font-bold mb-2">페이지 제목</label>
+                    <input type="text" id="pageTitle" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+                </div>
+                <div class="mb-4">
+                    <label for="pageParent" class="block text-gray-700 text-sm font-bold mb-2">상위 카테고리</label>
+                    <select id="pageParent" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                        <option value="null">최상위 카테고리</option>
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label for="pageContent" class="block text-gray-700 text-sm font-bold mb-2">HTML 코드</label>
+                    <textarea id="pageContent" rows="10" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" placeholder="여기에 HTML 코드를 붙여넣으세요..."></textarea>
+                </div>
+                <div class="flex items-center justify-end space-x-2">
+                    <button type="button" id="cancelBtn" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">취소</button>
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded">저장</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+    // ===================================================================================
+    //  데이터 정의: 이 부분은 이제 백엔드에서 관리됩니다.
+    // ===================================================================================
+    let documents = [];
+    const DOC_DATA_START_MARKER = 'const documents = [';
+    const DOC_DATA_END_MARKER = ']; // DOC_DATA_END';
+
+    // UI 요소
+    const listContainer = document.getElementById('document-list-container');
+    const iframe = document.getElementById('content-iframe');
+    const searchInput = document.getElementById('searchInput');
+    const pageTitleSpan = document.getElementById('page-title');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    
+    // 모달 관련 UI 요소
+    const addPageModal = document.getElementById('addPageModal');
+    const addPageBtn = document.getElementById('addPageBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const addPageForm = document.getElementById('addPageForm');
+    const pageParentSelect = document.getElementById('pageParent');
+
+    // 현재 페이지의 HTML에서 문서 데이터를 파싱
+    function parseDocumentsFromHtml() {
+        const pageHtml = document.documentElement.outerHTML;
+        const startIndex = pageHtml.indexOf(DOC_DATA_START_MARKER);
+        const endIndex = pageHtml.indexOf(DOC_DATA_END_MARKER, startIndex);
+        
+        if (startIndex === -1 || endIndex === -1) {
+            console.error("문서 데이터 마커를 찾을 수 없습니다.");
+            documents = [ { id: 1, title: '오류', content: '데이터를 불러오지 못했습니다.', parent_id: null }];
+            return;
+        }
+
+        const dataString = pageHtml.substring(startIndex + DOC_DATA_START_MARKER.length - 1, endIndex + 1);
+        try {
+            documents = eval(dataString); // eval 사용은 이 특정 케이스(자신을 파싱)에 한정.
+        } catch (e) {
+            console.error("문서 데이터 파싱 오류:", e);
+            documents = [ { id: 1, title: '오류', content: '데이터 파싱에 실패했습니다.', parent_id: null }];
+        }
+    }
+
+    // 사이드바 메뉴 렌더링
+    function renderMenu() {
+        function buildMenuHtml(parentId = null) {
+            const children = documents.filter(doc => doc.parent_id === parentId);
+            if (children.length === 0) return '';
+            let html = `<ul class="space-y-1 ${parentId !== null ? 'submenu pl-4' : 'py-4'}">`;
+            children.forEach(doc => {
+                const hasChildren = documents.some(d => d.parent_id === doc.id);
+                html += `<li data-id="${doc.id}" data-title="${doc.title.toLowerCase()}">
+                            <div class="flex items-center justify-between rounded-md text-gray-300">
+                                <a href="#" data-id="${doc.id}" class="doc-link flex-grow block px-3 py-2 text-sm rounded-md truncate">
+                                    ${hasChildren ? '<i class="caret fas fa-caret-right fa-fw mr-2 transition-transform"></i>' : '<i class="fas fa-file-alt fa-fw mr-2 text-gray-500"></i>'}
+                                    ${doc.title}
+                                </a>
+                            </div>
+                            ${buildMenuHtml(doc.id)}
+                         </li>`;
+            });
+            html += `</ul>`;
+            return html;
+        }
+        listContainer.innerHTML = buildMenuHtml();
+    }
+    
+    function renderParentSelectOptions() {
+        pageParentSelect.innerHTML = '<option value="null">최상위 카테고리</option>';
+        const categories = documents.filter(doc => doc.content === null);
+        categories.forEach(cat => {
+            const option = document.createElement('option');
+            option.value = cat.id;
+            option.textContent = cat.title;
+            pageParentSelect.appendChild(option);
+        });
+    }
+
+    function loadPage(pageId) {
+        const doc = documents.find(d => d.id == pageId);
+        if (doc && doc.content) {
+            iframe.srcdoc = doc.content;
+            pageTitleSpan.textContent = doc.title;
+            document.querySelectorAll('#sidebar a').forEach(a => a.classList.remove('active'));
+            document.querySelector(`#sidebar a[data-id="${pageId}"]`)?.classList.add('active');
+        }
+    }
+
+    // --- 이벤트 리스너 ---
+
+    listContainer.addEventListener('click', (e) => {
+        const link = e.target.closest('a.doc-link');
+        if (link) {
+            e.preventDefault();
+            const docId = link.dataset.id;
+            loadPage(docId);
+            const li = link.closest('li');
+            const submenu = li.querySelector('.submenu');
+            if (submenu) {
+                submenu.classList.toggle('open');
+                link.querySelector('.caret')?.classList.toggle('open');
+            }
+        }
+    });
+
+    searchInput.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        document.querySelectorAll('#sidebar li').forEach(item => {
+            const title = item.dataset.title;
+            item.style.display = title.includes(searchTerm) ? 'block' : 'none';
+        });
+    });
+
+    addPageBtn.addEventListener('click', () => {
+        renderParentSelectOptions();
+        addPageModal.classList.add('open');
+    });
+
+    cancelBtn.addEventListener('click', () => {
+        addPageModal.classList.remove('open');
+        addPageForm.reset();
+    });
+
+    addPageForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        loadingIndicator.classList.add('open');
+
+        const title = document.getElementById('pageTitle').value;
+        const parent_id_str = document.getElementById('pageParent').value;
+        const parent_id = parent_id_str === 'null' ? null : parseInt(parent_id_str, 10);
+        const content = document.getElementById('pageContent').value;
+
+        const newDoc = {
+            id: Date.now(),
+            title,
+            content,
+            parent_id,
+        };
+
+        const updatedDocs = [...documents, newDoc];
+        
+        try {
+            const response = await fetch('/api/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ documents: updatedDocs }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || '서버에서 오류가 발생했습니다.');
+            }
+
+            alert('저장 및 배포가 시작되었습니다! 잠시 후 페이지가 새로고침됩니다.');
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000); // 3초 후 새로고침
+
+        } catch (error) {
+            console.error('저장 실패:', error);
+            alert(`저장에 실패했습니다: ${error.message}`);
+            loadingIndicator.classList.remove('open');
+        }
+    });
+
+    // --- 초기화 ---
+    parseDocumentsFromHtml();
+    renderMenu();
+    </script>
+    
+    <!-- 
+        이 주석 블록 아래에 문서 데이터가 위치합니다.
+        백엔드 스크립트가 이 부분을 찾아 수정 후 다시 commit 합니다.
+    -->
+    <script>
+    const documents = [
+        { id: 1, title: '환영합니다', content: `<h1>아카이브에 오신 것을 환영합니다!</h1><p>왼쪽 상단의 '+ 새 페이지 추가' 버튼을 눌러 첫 문서를 작성해보세요.</p>`, parent_id: null },
+        { id: 2, title: '사업 분석', content: null, parent_id: null },
+        { id: 3, title: '기획', content: null, parent_id: null },
+        { id: 4, title: '운영', content: null, parent_id: null },
+        { id: 5, title: 'QA', content: null, parent_id: null },
+        { id: 6, title: '코드 공부', content: null, parent_id: null },
+        { id: 7, title: '개인', content: null, parent_id: null },
+    ]; // DOC_DATA_END
+    </script>
+</body>
+</html>
