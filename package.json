@@ -1,0 +1,28 @@
+{
+  "name": "archive-vercel",
+  "version": "1.0.0",
+  "description": "Personal Document Archive with Auto-commit",
+  "main": "index.html",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'No build step needed'",
+    "start": "echo 'Static site - no start command'"
+  },
+  "dependencies": {
+    "@octokit/rest": "^20.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "archive",
+    "documentation",
+    "vercel",
+    "github"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
