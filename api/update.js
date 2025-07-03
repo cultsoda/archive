@@ -35,7 +35,7 @@ export default async function handler(request, response) {
         const currentContent = Buffer.from(fileData.content, 'base64').toString('utf8');
 
         // 3. 파일 내용에서 문서 데이터 부분을 교체합니다.
-        const DOC_DATA_START_MARKER = 'const documents = [';
+        const DOC_DATA_START_MARKER = 'window.documentsData = [';
         const DOC_DATA_END_MARKER = ']; // DOC_DATA_END';
         
         const startIndex = currentContent.indexOf(DOC_DATA_START_MARKER);
